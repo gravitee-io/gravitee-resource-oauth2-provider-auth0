@@ -1,0 +1,49 @@
+= Auth0 OAuth2 Resource
+
+== Overview
+
+This Gravitee.io resource enables OAuth2 token validation against https://auth0.com/[Auth0].
+
+Auth0 does not expose an RFC 7662 introspection endpoint for third-party resource servers.
+Instead, access tokens issued by Auth0 for custom APIs are JWTs whose integrity is verified
+locally using Auth0's published public keys (JWKS).
+
+== Validation strategy
+
+For each incoming access token the resource:
+
+1. Parses the token as a signed JWT.
+2. Fetches (and caches) the tenant's JWKS from `https://{domain}/.well-known/jwks.json`.
+3. Verifies the JWT signature using the matching public key (RS256 or ES256).
+4. Validates standard claims: `exp`, `iss`, `aud`.
+
+Signing keys are cached in memory and refreshed after a 1-hour TTL or on key-rotation events
+(when the token's `kid` is not found in the cached JWKS).
+
+== Configuration
+
+[cols="1,1,3"]
+|===
+|Property |Required |Description
+
+|`domain`
+|Yes
+|Your Auth0 domain, e.g. `my-tenant.us.auth0.com` or a custom domain. Found in Auth0 dashboard
+under *Applications > APIs > Settings*.
+
+|`audience`
+|Yes
+|The API Identifier configured in the Auth0 dashboard (e.g. `https://my-api.example.com`).
+Used to validate the `aud` claim and prevent token confusion attacks.
+
+|`userClaim`
+|No (default: `sub`)
+|Claim field used to identify the end user in analytics logs.
+|===
+
+== Important notes
+
+* Auth0 access tokens for the `/userinfo` endpoint (opaque tokens issued without an audience)
+  cannot be validated locally. This resource only supports JWT access tokens issued for a
+  custom API audience.
+* The `iss` claim in Auth0 tokens always ends with a trailing slash (`https://{domain}/`).

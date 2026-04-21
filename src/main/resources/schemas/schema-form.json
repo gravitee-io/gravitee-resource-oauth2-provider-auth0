@@ -1,0 +1,32 @@
+{
+    "type": "object",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+        "domain": {
+            "title": "Auth0 Domain",
+            "description": "Your Auth0 domain (e.g. my-tenant.us.auth0.com or a custom domain). Found in Auth0 dashboard under Applications > APIs > Settings. Supports EL",
+            "type": "string"
+        },
+        "audience": {
+            "title": "Audience",
+            "description": "Expected audience (aud claim) for incoming access tokens. This is the API Identifier configured in the Auth0 dashboard (e.g. https://my-api.example.com). Validating the audience prevents token confusion attacks. Supports EL",
+            "type": "string"
+        },
+        "userClaim": {
+            "title": "User claim",
+            "description": "Claim field used to identify the end user in analytics logs. Defaults to 'sub' (subject). Supports EL",
+            "type": "string",
+            "default": "sub"
+        },
+        "http": {
+            "$ref": "#/gioExternalDefinitions/httpClientOptions"
+        },
+        "proxy": {
+            "$ref": "#/gioExternalDefinitions/httpProxyOptions"
+        },
+        "ssl": {
+            "$ref": "#/gioExternalDefinitions/sslOptions"
+        }
+    },
+    "required": ["domain", "audience"]
+}
