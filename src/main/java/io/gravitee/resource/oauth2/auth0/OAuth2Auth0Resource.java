@@ -298,7 +298,11 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
         // Create a source resolver to resolve the Json Web Keystore from an url.
         return new JWKSUrlJWKSourceResolver<>(
             jwksUri,
-            new VertxContentRetriever(deploymentContext.getComponent(Vertx.class), deploymentContext.getComponent(Configuration.class))
+            new VertxContentRetriever(
+                deploymentContext.getComponent(Vertx.class),
+                deploymentContext.getComponent(Configuration.class),
+                configuration()
+            )
         );
     }
 
