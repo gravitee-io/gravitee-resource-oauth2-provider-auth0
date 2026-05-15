@@ -17,20 +17,29 @@ package io.gravitee.resource.oauth2.auth0;
 
 import io.gravitee.el.TemplateEngine;
 import io.gravitee.gateway.reactive.api.context.DeploymentContext;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
 public class TestDeploymentContext implements DeploymentContext {
 
     private final TemplateEngine templateEngine;
+    private final ConcurrentMap<Class<?>, Object> components = new ConcurrentHashMap<>();
 
     @Override
     public <T> T getComponent(Class<T> componentClass) {
-        return null;
+        return (T) components.computeIfPresent(componentClass, (aClass, o) -> o);
     }
 
     @Override
     public TemplateEngine getTemplateEngine() {
         return this.templateEngine;
+    }
+
+    public <T> void addComponent(Class<T> componentClass, T instance) {
+        components.putIfAbsent(componentClass, instance);
     }
 }
