@@ -17,11 +17,8 @@ package io.gravitee.resource.oauth2.auth0;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.BadJOSEException;
+import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -34,8 +31,8 @@ import io.gravitee.gateway.api.handler.Handler;
 import io.gravitee.gateway.api.http.HttpHeaderNames;
 import io.gravitee.gateway.reactive.api.context.DeploymentContext;
 import io.gravitee.node.api.Node;
+import io.gravitee.node.api.configuration.Configuration;
 import io.gravitee.node.api.utils.NodeUtils;
-import io.gravitee.node.container.spring.SpringEnvironmentConfiguration;
 import io.gravitee.node.vertx.client.http.VertxHttpClientFactory;
 import io.gravitee.plugin.mappers.HttpClientOptionsMapper;
 import io.gravitee.plugin.mappers.HttpProxyOptionsMapper;
@@ -47,6 +44,9 @@ import io.gravitee.resource.oauth2.api.OAuth2Response;
 import io.gravitee.resource.oauth2.api.openid.UserInfoResponse;
 import io.gravitee.resource.oauth2.auth0.configuration.OAuth2Auth0ResourceConfiguration;
 import io.gravitee.resource.oauth2.auth0.configuration.OAuth2Auth0ResourceConfigurationEvaluator;
+import io.gravitee.resource.oauth2.auth0.contentretriever.vertx.VertxContentRetriever;
+import io.gravitee.resource.oauth2.auth0.jwk.JWKSUrlJWKSourceResolver;
+import io.reactivex.rxjava3.functions.Consumer;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
@@ -61,9 +61,6 @@ import lombok.AccessLevel;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.BeansException;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
 
 /**
  * Gravitee OAuth2 resource for Auth0.
@@ -89,7 +86,7 @@ import org.springframework.context.ApplicationContextAware;
  *
  * @author GraviteeSource Team
  */
-public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfiguration> implements ApplicationContextAware {
+public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfiguration> {
 
     public static final String ERROR_CHECKING_OAUTH_2_TOKEN = "An error occurs while checking OAuth2 token against Auth0";
     public static final String ERROR_GETTING_USERINFO = "An error occurs while getting userinfo from Auth0";
@@ -100,19 +97,11 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
 
     private static final String AUTHORIZATION_HEADER_BEARER_SCHEME = "Bearer ";
 
-    /** JWKS cache TTL: keys are refreshed after 1 hour even without key-rotation events. */
-    private static final long JWKS_CACHE_TTL_MS = 60 * 60 * 1_000L;
-
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final Logger logger = LoggerFactory.getLogger(OAuth2Auth0Resource.class);
 
-    private ApplicationContext applicationContext;
-
     private HttpClient httpClient;
-
-    /** RxJava3 Vert.x instance, kept for executing blocking JWKS fetches on the worker pool. */
-    private Vertx rxVertx;
 
     private String userAgent;
 
@@ -128,10 +117,6 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
     /** Computed from domain: {@code https://{domain}/.well-known/jwks.json} */
     private String jwksUri;
 
-    // JWKS cache, protected by "this" monitor
-    private JWKSet jwksCache;
-    private long jwksCacheTimestamp;
-
     @Setter(AccessLevel.PACKAGE)
     private OAuth2Auth0ResourceConfiguration configuration;
 
@@ -145,6 +130,8 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
     @Inject
     @Setter
     private DeploymentContext deploymentContext;
+
+    private JWKSUrlJWKSourceResolver<SecurityContext> sourceResolver;
 
     @Override
     public OAuth2Auth0ResourceConfiguration configuration() {
@@ -173,15 +160,13 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
             jwksUri
         );
 
-        rxVertx = applicationContext.getBean(Vertx.class);
-
         URI targetUri = URI.create(userInfoEndpointURI);
         int port = targetUri.getPort() != -1 ? targetUri.getPort() : ("https".equals(targetUri.getScheme()) ? 443 : 80);
         URL targetUrl = new URL(targetUri.getScheme(), targetUri.getHost(), port, targetUri.toURL().getFile());
 
         httpClient = VertxHttpClientFactory.builder()
-            .vertx(rxVertx)
-            .nodeConfiguration(new SpringEnvironmentConfiguration(applicationContext.getEnvironment()))
+            .vertx(deploymentContext.getComponent(Vertx.class))
+            .nodeConfiguration(deploymentContext.getComponent(Configuration.class))
             .defaultTarget(targetUrl.toString())
             .httpOptions(HttpClientOptionsMapper.INSTANCE.map(configuration().getHttpClientOptions()))
             .sslOptions(SslOptionsMapper.INSTANCE.map(configuration().getSslOptions()))
@@ -190,18 +175,26 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
             .createHttpClient()
             .getDelegate();
 
-        userAgent = NodeUtils.userAgent(applicationContext.getBean(Node.class));
+        userAgent = NodeUtils.userAgent(deploymentContext.getComponent(Node.class));
+
+        sourceResolver = prepareJWKSourceResolver();
 
         // Pre-load the JWKS at startup so the first request does not incur the fetch latency.
-        try {
-            loadJwks();
-        } catch (Exception e) {
-            logger.warn(
-                "Failed to pre-load JWKS from {}. Token validation will be attempted at first request: {}",
-                jwksUri,
-                e.getMessage()
-            );
-        }
+        sourceResolver
+            .initialize()
+            .doOnError(
+                new Consumer<Throwable>() {
+                    @Override
+                    public void accept(Throwable throwable) throws Throwable {
+                        logger.warn(
+                            "Failed to pre-load JWKS from {}. Token validation will be attempted at first request: {}",
+                            jwksUri,
+                            throwable.getMessage()
+                        );
+                    }
+                }
+            )
+            .blockingAwait();
     }
 
     @Override
@@ -233,13 +226,7 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
             return;
         }
 
-        // JWKS fetch (if needed) is blocking I/O — run on the worker thread pool.
-        rxVertx
-            .executeBlocking(() -> validateJwt(signedJWT))
-            .subscribe(responseHandler::handle, error -> {
-                logger.error(ERROR_CHECKING_OAUTH_2_TOKEN, error);
-                responseHandler.handle(new OAuth2Response(error));
-            });
+        responseHandler.handle(validateJwt(signedJWT));
     }
 
     @Override
@@ -304,14 +291,16 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
         return new OAuth2ResourceMetadata(protectedResourceUri, List.of(authorizationServerUrl), scopesSupported);
     }
 
-    @Override
-    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-        this.applicationContext = applicationContext;
-    }
-
     // -------------------------------------------------------------------------
     // JWT validation internals
     // -------------------------------------------------------------------------
+    private JWKSUrlJWKSourceResolver<SecurityContext> prepareJWKSourceResolver() {
+        // Create a source resolver to resolve the Json Web Keystore from an url.
+        return new JWKSUrlJWKSourceResolver<>(
+            jwksUri,
+            new VertxContentRetriever(deploymentContext.getComponent(Vertx.class), deploymentContext.getComponent(Configuration.class))
+        );
+    }
 
     /**
      * Validates a parsed signed JWT. This method runs on a Vert.x worker thread (called from
@@ -319,18 +308,17 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
      */
     private OAuth2Response validateJwt(SignedJWT signedJWT) {
         try {
-            String kid = signedJWT.getHeader().getKeyID();
-            JWSAlgorithm algorithm = signedJWT.getHeader().getAlgorithm();
+            // Create a selector with the given jwks source resolver so keys used to verify jwt signatures will be selected from there.
+            final JWSKeySelector<SecurityContext> selector = new JWSVerificationKeySelector<>(
+                signedJWT.getHeader().getAlgorithm(),
+                sourceResolver
+            );
 
-            JWKSet jwks = getOrRefreshJwks(kid);
+            // Create a jwt processor with the given selector.
+            final DefaultJWTProcessor<SecurityContext> jwtProcessor = new DefaultJWTProcessor<>();
+            final DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier = buildClaimsVerifier();
 
-            JWKSource<SecurityContext> jwkSource = new ImmutableJWKSet<>(jwks);
-            JWSVerificationKeySelector<SecurityContext> keySelector = new JWSVerificationKeySelector<>(algorithm, jwkSource);
-
-            DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier = buildClaimsVerifier();
-
-            DefaultJWTProcessor<SecurityContext> jwtProcessor = new DefaultJWTProcessor<>();
-            jwtProcessor.setJWSKeySelector(keySelector);
+            jwtProcessor.setJWSKeySelector(selector);
             jwtProcessor.setJWTClaimsSetVerifier(claimsVerifier);
 
             JWTClaimsSet claims = jwtProcessor.process(signedJWT, null);
@@ -361,38 +349,6 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
         HashSet<String> audiences = new HashSet<>();
         audiences.add(audience);
         return new DefaultJWTClaimsVerifier<>(audiences, exactMatchBuilder.build(), Set.of("sub", "iat", "exp"), null);
-    }
-
-    /**
-     * Returns the cached JWKS, re-fetching from Auth0 if the cache has expired or if the key
-     * identified by {@code kid} is not present (indicating key rotation).
-     */
-    private synchronized JWKSet getOrRefreshJwks(String kid) throws Exception {
-        boolean cacheHasKey = jwksCache != null && (kid == null || jwksCache.getKeyByKeyId(kid) != null);
-        boolean cacheIsFresh = jwksCache != null && (System.currentTimeMillis() - jwksCacheTimestamp) < JWKS_CACHE_TTL_MS;
-
-        if (cacheHasKey && cacheIsFresh) {
-            return jwksCache;
-        }
-
-        if (!cacheIsFresh) {
-            logger.debug("JWKS cache expired, refreshing from {}", jwksUri);
-        } else {
-            logger.debug("Key ID '{}' not found in JWKS cache, refreshing from {} (possible key rotation)", kid, jwksUri);
-        }
-
-        loadJwks();
-        return jwksCache;
-    }
-
-    /**
-     * Fetches the JWKS from the Auth0 endpoint and updates the in-memory cache.
-     * This is a blocking HTTP call — only invoke from a worker thread or during startup.
-     */
-    private synchronized void loadJwks() throws Exception {
-        jwksCache = JWKSet.load(new URL(jwksUri));
-        jwksCacheTimestamp = System.currentTimeMillis();
-        logger.info("Loaded {} signing key(s) from JWKS endpoint {}", jwksCache.size(), jwksUri);
     }
 
     /**

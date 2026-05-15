@@ -18,7 +18,6 @@ package io.gravitee.resource.oauth2.auth0;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.mockito.Mockito.lenient;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
@@ -34,6 +33,7 @@ import com.nimbusds.jwt.SignedJWT;
 import io.gravitee.el.TemplateEngine;
 import io.gravitee.el.spel.context.SecuredResolver;
 import io.gravitee.node.api.Node;
+import io.gravitee.node.api.configuration.Configuration;
 import io.gravitee.resource.api.AbstractConfigurableResource;
 import io.gravitee.resource.oauth2.api.OAuth2ResourceMetadata;
 import io.gravitee.resource.oauth2.auth0.configuration.OAuth2Auth0ResourceConfiguration;
@@ -48,7 +48,6 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationContext;
 
 /**
  * @author GraviteeSource Team
@@ -68,10 +67,10 @@ class OAuth2Auth0ResourceTest {
     private static TemplateEngine templateEngine;
 
     @Mock
-    private ApplicationContext applicationContext;
+    private Node node;
 
     @Mock
-    private Node node;
+    private Configuration nodeConfiguration;
 
     private OAuth2Auth0Resource resource;
     private OAuth2Auth0ResourceConfiguration configuration;
@@ -92,9 +91,13 @@ class OAuth2Auth0ResourceTest {
     void before(WireMockRuntimeInfo wireMockRuntimeInfo) throws Exception {
         wireMockPort = wireMockRuntimeInfo.getHttpPort();
 
+        TestDeploymentContext deploymentContext = new TestDeploymentContext(templateEngine);
+        deploymentContext.addComponent(Vertx.class, Vertx.vertx());
+        deploymentContext.addComponent(Node.class, node);
+        deploymentContext.addComponent(Configuration.class, nodeConfiguration);
+
         resource = new OAuth2Auth0Resource();
-        resource.setApplicationContext(applicationContext);
-        resource.setDeploymentContext(new TestDeploymentContext(templateEngine));
+        resource.setDeploymentContext(deploymentContext);
 
         // Redirect all Auth0 endpoints to the local WireMock server
         resource.setAuth0BaseUrl("http://localhost:" + wireMockPort + "/");
@@ -106,9 +109,6 @@ class OAuth2Auth0ResourceTest {
         Field configurationField = AbstractConfigurableResource.class.getDeclaredField("configuration");
         configurationField.setAccessible(true);
         configurationField.set(resource, configuration);
-
-        lenient().when(applicationContext.getBean(Node.class)).thenReturn(node);
-        lenient().when(applicationContext.getBean(Vertx.class)).thenReturn(Vertx.vertx());
 
         // Serve the JWKS at the expected Auth0 discovery path
         stubFor(get(urlEqualTo("/" + DOMAIN + "/.well-known/jwks.json")).willReturn(aResponse().withStatus(200).withBody(testJwksJson)));
