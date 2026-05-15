@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/gravitee-io/gravitee-resource-oauth2-provider-auth0/compare/1.0.1...1.0.2) (2026-05-15)
+
+
+### Bug Fixes
+
+* Do not close the HTTP client for JWKS retrieve and apply HTTP options from configuration ([#3](https://github.com/gravitee-io/gravitee-resource-oauth2-provider-auth0/issues/3)) ([b4de0d2](https://github.com/gravitee-io/gravitee-resource-oauth2-provider-auth0/commit/b4de0d2dcd853d9dfc976296374d786a3da82d92))
+
 ## [1.0.1](https://github.com/gravitee-io/gravitee-resource-oauth2-provider-auth0/compare/1.0.0...1.0.1) (2026-05-15)
 
 
