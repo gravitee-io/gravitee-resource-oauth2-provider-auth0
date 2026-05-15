@@ -19,6 +19,10 @@ import io.gravitee.node.api.configuration.Configuration;
 import io.gravitee.node.vertx.client.http.VertxHttpClientFactory;
 import io.gravitee.node.vertx.client.http.VertxHttpClientOptions;
 import io.gravitee.node.vertx.client.ssl.SslOptions;
+import io.gravitee.plugin.mappers.HttpClientOptionsMapper;
+import io.gravitee.plugin.mappers.HttpProxyOptionsMapper;
+import io.gravitee.plugin.mappers.SslOptionsMapper;
+import io.gravitee.resource.oauth2.auth0.configuration.OAuth2Auth0ResourceConfiguration;
 import io.gravitee.resource.oauth2.auth0.contentretriever.Content;
 import io.gravitee.resource.oauth2.auth0.contentretriever.ContentRetriever;
 import io.reactivex.rxjava3.core.Single;
@@ -44,10 +48,16 @@ public class VertxContentRetriever implements ContentRetriever {
     private final Configuration nodeConfiguration;
 
     private HttpClient httpClient;
+    private final OAuth2Auth0ResourceConfiguration configuration;
 
-    public VertxContentRetriever(final Vertx vertx, final Configuration nodeConfiguration) {
+    public VertxContentRetriever(
+        final Vertx vertx,
+        final Configuration nodeConfiguration,
+        final OAuth2Auth0ResourceConfiguration configuration
+    ) {
         this.vertx = vertx;
         this.nodeConfiguration = nodeConfiguration;
+        this.configuration = configuration;
     }
 
     public Single<Content> retrieve(String url) {
@@ -86,8 +96,7 @@ public class VertxContentRetriever implements ContentRetriever {
                         new Exception(String.format("Invalid status code %d received from %s", response.statusCode(), finalURL))
                     );
                 }
-            })
-            .doFinally(httpClient::close);
+            });
     }
 
     private HttpClient buildHttpClient(URL url) {
@@ -95,8 +104,9 @@ public class VertxContentRetriever implements ContentRetriever {
             httpClient = VertxHttpClientFactory.builder()
                 .vertx(vertx)
                 .nodeConfiguration(nodeConfiguration)
-                .httpOptions(VertxHttpClientOptions.builder().connectTimeout(DEFAULT_CONNECT_TIMEOUT).build())
-                .sslOptions(SslOptions.builder().trustAll(true).build())
+                .httpOptions(HttpClientOptionsMapper.INSTANCE.map(configuration.getHttpClientOptions()))
+                .sslOptions(SslOptionsMapper.INSTANCE.map(configuration.getSslOptions()))
+                .proxyOptions(HttpProxyOptionsMapper.INSTANCE.map(configuration.getHttpProxyOptions()))
                 .defaultTarget(url.toString())
                 .build()
                 .createHttpClient();
