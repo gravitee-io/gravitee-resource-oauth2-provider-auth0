@@ -1,3 +1,15 @@
+# [2.0.0-alpha.1](https://github.com/gravitee-io/gravitee-resource-oauth2-provider-auth0/compare/1.0.2...2.0.0-alpha.1) (2026-06-15)
+
+
+### Features
+
+* upgrade to vertx 5 ([3a88dad](https://github.com/gravitee-io/gravitee-resource-oauth2-provider-auth0/commit/3a88dadb0d61680b233903081d441c36827b777b))
+
+
+### BREAKING CHANGES
+
+* upgrade to vertx 5.x
+
 ## [1.0.2](https://github.com/gravitee-io/gravitee-resource-oauth2-provider-auth0/compare/1.0.1...1.0.2) (2026-05-15)
 
 
