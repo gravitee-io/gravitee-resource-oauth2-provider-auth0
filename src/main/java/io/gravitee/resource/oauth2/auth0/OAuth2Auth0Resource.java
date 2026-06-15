@@ -48,7 +48,6 @@ import io.gravitee.resource.oauth2.auth0.contentretriever.vertx.VertxContentRetr
 import io.gravitee.resource.oauth2.auth0.jwk.JWKSUrlJWKSourceResolver;
 import io.reactivex.rxjava3.functions.Consumer;
 import io.vertx.core.http.HttpClient;
-import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.RequestOptions;
 import io.vertx.rxjava3.core.Vertx;
@@ -248,13 +247,19 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
             })
             .onSuccess(request ->
                 request
-                    .response(asyncResponse -> {
-                        if (asyncResponse.failed()) {
-                            logger.error(ERROR_GETTING_USERINFO, asyncResponse.cause());
-                            responseHandler.handle(new UserInfoResponse(asyncResponse.cause()));
-                        } else {
-                            final HttpClientResponse response = asyncResponse.result();
-                            response.bodyHandler(buffer -> {
+                    .send()
+                    .onFailure(cause -> {
+                        logger.error(ERROR_GETTING_USERINFO, cause);
+                        responseHandler.handle(new UserInfoResponse(cause));
+                    })
+                    .onSuccess(response ->
+                        response
+                            .body()
+                            .onFailure(cause -> {
+                                logger.error(ERROR_GETTING_USERINFO, cause);
+                                responseHandler.handle(new UserInfoResponse(cause));
+                            })
+                            .onSuccess(buffer -> {
                                 logger.debug("Auth0 userinfo endpoint returned status {}", response.statusCode());
                                 if (response.statusCode() == HttpStatusCode.OK_200) {
                                     responseHandler.handle(new UserInfoResponse(true, buffer.toString()));
@@ -266,14 +271,8 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
                                     );
                                     responseHandler.handle(new UserInfoResponse(new OAuth2ResourceException(ERROR_GETTING_USERINFO)));
                                 }
-                            });
-                        }
-                    })
-                    .exceptionHandler(event -> {
-                        logger.error(ERROR_GETTING_USERINFO, event);
-                        responseHandler.handle(new UserInfoResponse(event));
-                    })
-                    .end()
+                            })
+                    )
             );
     }
 
