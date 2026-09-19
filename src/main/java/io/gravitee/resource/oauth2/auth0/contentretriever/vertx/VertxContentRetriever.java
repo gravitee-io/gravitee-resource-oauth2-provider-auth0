@@ -34,9 +34,9 @@ import io.vertx.rxjava3.core.http.HttpClient;
 import io.vertx.rxjava3.core.http.HttpClientRequest;
 import java.net.URI;
 import java.net.URL;
-import lombok.extern.slf4j.Slf4j;
+import lombok.CustomLog;
 
-@Slf4j
+@CustomLog
 public class VertxContentRetriever implements ContentRetriever {
 
     private static final int MAX_RESPONSE_SIZE = 5_242_880; // 5MB
