@@ -2,13 +2,15 @@
 
 == Compatibility matrix
 
-[cols="1,1"]
+[cols="1,1,1"]
 |===
-|Plugin version | APIM version
+| Plugin version | APIM             | Java version
 
-|2.0 and upper  | 4.12.x to latest
-|1.0 and upper  | 4.10.x to 4.11.x
+| 2.0 and upper  | 4.12.x to latest | 21
+| 1.0 and upper  | 4.10.x to 4.11.x | 21
 |===
+
+The *Java version* column is the bytecode level of the latest release of each line, which sets the minimum runtime able to load the artifact.
 
 == Overview
 
