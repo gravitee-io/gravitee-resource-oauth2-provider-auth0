@@ -57,9 +57,8 @@ import java.text.ParseException;
 import java.util.*;
 import javax.inject.Inject;
 import lombok.AccessLevel;
+import lombok.CustomLog;
 import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Gravitee OAuth2 resource for Auth0.
@@ -85,6 +84,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author GraviteeSource Team
  */
+@CustomLog
 public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfiguration> {
 
     public static final String ERROR_CHECKING_OAUTH_2_TOKEN = "An error occurs while checking OAuth2 token against Auth0";
@@ -97,8 +97,6 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
     private static final String AUTHORIZATION_HEADER_BEARER_SCHEME = "Bearer ";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    private final Logger logger = LoggerFactory.getLogger(OAuth2Auth0Resource.class);
 
     private HttpClient httpClient;
 
@@ -152,7 +150,7 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
         userInfoEndpointURI = auth0BaseUrl + domain + USERINFO_PATH;
         jwksUri = auth0BaseUrl + domain + JWKS_PATH;
 
-        logger.info(
+        log.info(
             "Starting Auth0 OAuth2 resource for domain '{}' (authorization server: {}, JWKS: {})",
             domain,
             authorizationServerUrl,
@@ -185,7 +183,7 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
                 new Consumer<Throwable>() {
                     @Override
                     public void accept(Throwable throwable) throws Throwable {
-                        logger.warn(
+                        log.warn(
                             "Failed to pre-load JWKS from {}. Token validation will be attempted at first request: {}",
                             jwksUri,
                             throwable.getMessage()
@@ -202,7 +200,7 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
         try {
             httpClient.close();
         } catch (IllegalStateException ise) {
-            logger.warn(ise.getMessage());
+            log.warn(ise.getMessage());
         }
     }
 
@@ -220,7 +218,7 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
         try {
             signedJWT = SignedJWT.parse(accessToken);
         } catch (ParseException e) {
-            logger.debug("Access token is not a valid JWT: {}", e.getMessage());
+            log.debug("Access token is not a valid JWT: {}", e.getMessage());
             responseHandler.handle(new OAuth2Response(false, "{\"active\":false}"));
             return;
         }
@@ -230,7 +228,7 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
 
     @Override
     public void userInfo(String accessToken, Handler<UserInfoResponse> responseHandler) {
-        logger.debug("Getting userinfo from Auth0 endpoint: {}", userInfoEndpointURI);
+        log.debug("Getting userinfo from Auth0 endpoint: {}", userInfoEndpointURI);
 
         final RequestOptions reqOptions = new RequestOptions()
             .setMethod(HttpMethod.GET)
@@ -242,29 +240,29 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
         httpClient
             .request(reqOptions)
             .onFailure(event -> {
-                logger.error(ERROR_GETTING_USERINFO, event);
+                log.error(ERROR_GETTING_USERINFO, event);
                 responseHandler.handle(new UserInfoResponse(event));
             })
             .onSuccess(request ->
                 request
                     .send()
                     .onFailure(cause -> {
-                        logger.error(ERROR_GETTING_USERINFO, cause);
+                        log.error(ERROR_GETTING_USERINFO, cause);
                         responseHandler.handle(new UserInfoResponse(cause));
                     })
                     .onSuccess(response ->
                         response
                             .body()
                             .onFailure(cause -> {
-                                logger.error(ERROR_GETTING_USERINFO, cause);
+                                log.error(ERROR_GETTING_USERINFO, cause);
                                 responseHandler.handle(new UserInfoResponse(cause));
                             })
                             .onSuccess(buffer -> {
-                                logger.debug("Auth0 userinfo endpoint returned status {}", response.statusCode());
+                                log.debug("Auth0 userinfo endpoint returned status {}", response.statusCode());
                                 if (response.statusCode() == HttpStatusCode.OK_200) {
                                     responseHandler.handle(new UserInfoResponse(true, buffer.toString()));
                                 } else {
-                                    logger.error(
+                                    log.error(
                                         "An error occurs while getting userinfo from Auth0. Request ended with status {}: {}",
                                         response.statusCode(),
                                         buffer
@@ -329,10 +327,10 @@ public class OAuth2Auth0Resource extends OAuth2Resource<OAuth2Auth0ResourceConfi
             String payload = buildPayload(claims);
             return new OAuth2Response(true, payload);
         } catch (BadJOSEException | JOSEException e) {
-            logger.debug("JWT validation failed for domain '{}': {}", configuration().getDomain(), e.getMessage());
+            log.debug("JWT validation failed for domain '{}': {}", configuration().getDomain(), e.getMessage());
             return new OAuth2Response(false, "{\"active\":false}");
         } catch (Exception e) {
-            logger.error(ERROR_CHECKING_OAUTH_2_TOKEN, e);
+            log.error(ERROR_CHECKING_OAUTH_2_TOKEN, e);
             return new OAuth2Response(e);
         }
     }
