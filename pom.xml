@@ -89,7 +89,7 @@
             <!-- Version specified to avoid a breaking change. Once the versions of APIM under 4.12 will not be maintained anymore
                     we can move back to scope provided and remove the version. -->
             <!-- <scope>provided</scope> -->
-            <version>1.5.1</version>
+            <version>1.6.0</version>
         </dependency>
 
         <dependency>
