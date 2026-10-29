@@ -36,7 +36,7 @@
 
     <properties>
         <gravitee-apim.version>4.12.20</gravitee-apim.version>
-        <gravitee-plugin-common-configurations.version>1.0.0</gravitee-plugin-common-configurations.version>
+        <gravitee-plugin-common-configurations.version>1.5.1</gravitee-plugin-common-configurations.version>
         <gravitee-plugin-common-configurations-maven-plugin.version>1.0.0</gravitee-plugin-common-configurations-maven-plugin.version>
         <mapstruct.version>1.6.3</mapstruct.version>
 
